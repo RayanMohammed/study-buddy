@@ -1,0 +1,30 @@
+[project]
+name = "study-buddy"
+version = "0.1.0"
+description = "PDF ingestion pipeline: extract, chunk, embed, and store study material; track quiz interactions."
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "pymupdf>=1.24.0",
+    "sentence-transformers>=3.0.0",
+    "chromadb>=0.5.0",
+    "sqlalchemy>=2.0.0",
+    "click>=8.1.0",
+]
+
+[project.optional-dependencies]
+marker = [
+    "marker-pdf>=1.0.0",
+]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+study-buddy = "study_buddy.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["study_buddy*"]
