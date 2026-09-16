@@ -52,17 +52,17 @@ def ingest(path: Path):
 def query(text: str, n_results: int):
     """Embed TEXT and print the most similar stored chunks (for sanity-checking retrieval)."""
     results = query_chunks(text, n_results=n_results, settings=DEFAULT_SETTINGS)
-    documents = results.get("documents", [[]])[0]
-    metadatas = results.get("metadatas", [[]])[0]
-    distances = results.get("distances", [[]])[0]
 
-    if not documents:
+    if not results:
         click.echo("No results. Have you run `study-buddy ingest` yet?")
         return
 
-    for doc, meta, dist in zip(documents, metadatas, distances):
-        click.echo(f"--- {meta['filename']} p.{meta['page_number']} [{meta['topic']}] (distance={dist:.4f})")
-        preview = doc[:200] + ("..." if len(doc) > 200 else "")
+    for result in results:
+        click.echo(
+            f"--- {result['filename']} p.{result['page_number']} "
+            f"[{result['topic']}] (distance={result['distance']:.4f})"
+        )
+        preview = result["text"][:200] + ("..." if len(result["text"]) > 200 else "")
         click.echo(preview)
         click.echo()
 

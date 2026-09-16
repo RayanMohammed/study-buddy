@@ -6,22 +6,38 @@ agree on where things are stored without repeating string literals.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load the project-root .env file explicitly (rather than relying on
+# python-dotenv's upward directory search) so DATABASE_URL is found
+# regardless of the current working directory a script is run from.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+
+def _database_url_from_env() -> str:
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise RuntimeError(
+            "DATABASE_URL is not set. Add it to a .env file at the project "
+            "root (or export it) — it should point at a Postgres instance "
+            "with the pgvector extension available, e.g. a Neon database."
+        )
+    return url
 
 
 @dataclass(frozen=True)
 class Settings:
-    # Where ChromaDB persists its on-disk collection.
-    chroma_dir: Path = Path("./data/chroma")
-    chroma_collection: str = "study_material"
-
     # sentence-transformers model used to embed every chunk.
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
 
-    # SQLAlchemy connection string for the interactions database.
-    # Swap for a postgres:// URL to move to Postgres without code changes.
-    database_url: str = "sqlite:///./data/study_buddy.db"
+    # SQLAlchemy connection string for the single Postgres database that
+    # holds both slide chunks (with pgvector embeddings) and quiz
+    # interactions. Sourced from the DATABASE_URL environment variable.
+    database_url: str = field(default_factory=_database_url_from_env)
 
     # A page is routed to the marker-pdf fallback when pymupdf's extracted
     # text looks too sparse/garbled relative to how much content the page

@@ -11,6 +11,7 @@ back to the PyMuPDF text and flag the page so callers know it may be lossy.
 from __future__ import annotations
 
 import re
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -156,6 +157,18 @@ def extract_pdf_pages(
                 except ImportError:
                     # marker-pdf not installed: keep the pymupdf text but
                     # note it may be lossy for this page.
+                    method = "pymupdf_lowconf"
+                except Exception as exc:
+                    # marker-pdf is installed but failed at runtime (e.g. its
+                    # OCR backend can't find a required binary) — degrade the
+                    # same way as "not installed" instead of letting one bad
+                    # page crash the whole ingest.
+                    warnings.warn(
+                        f"marker-pdf fallback failed for {pdf_path.name} "
+                        f"p.{page_index + 1}, keeping pymupdf text instead: {exc}",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
                     method = "pymupdf_lowconf"
 
             pages.append(

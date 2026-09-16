@@ -1,10 +1,11 @@
 # study-buddy
 
 A PDF ingestion pipeline for study material: extract text from PDFs, split
-it into topic-tagged chunks, embed those chunks, and store them in a local
-vector database for semantic search. Also includes a small relational
-schema for logging quiz question/answer interactions (e.g. from an AI
-tutoring loop).
+it into topic-tagged chunks, embed those chunks, and store them for semantic
+search. Slide chunks and quiz question/answer interactions (e.g. from an AI
+tutoring loop) live together in one Postgres database, using the
+[pgvector](https://github.com/pgvector/pgvector) extension for similarity
+search.
 
 ## Pipeline
 
@@ -23,20 +24,22 @@ tutoring loop).
    that introduced it) as metadata.
 4. **Embed** ([`study_buddy/embeddings.py`](study_buddy/embeddings.py)) — `sentence-transformers/all-MiniLM-L6-v2`,
    loaded once and cached.
-5. **Store** ([`study_buddy/vectorstore.py`](study_buddy/vectorstore.py)) — a local, on-disk ChromaDB collection
-   (`./data/chroma` by default). Chunk IDs are deterministic, so re-ingesting
-   an unchanged PDF updates its vectors in place instead of duplicating them.
+5. **Store** ([`study_buddy/vectorstore.py`](study_buddy/vectorstore.py)) — embeddings are written to the
+   `slide_chunks` table ([`study_buddy/db.py`](study_buddy/db.py)) as a pgvector column. Chunk IDs are
+   deterministic, and storage uses a Postgres `INSERT ... ON CONFLICT DO
+   UPDATE` upsert, so re-ingesting an unchanged PDF updates its row in place
+   instead of duplicating it. Retrieval orders by pgvector's cosine distance
+   directly in SQL.
 6. **Track interactions** ([`study_buddy/db.py`](study_buddy/db.py)) — a SQLAlchemy model, `QuestionInteraction`,
    with fields `question_id, topic_id, question_text, user_answer, is_correct,
-   response_time_ms, timestamp, model_used, tool_call_valid`. Backed by
-   SQLite by default (`./data/study_buddy.db`); point `Settings.database_url`
-   at a `postgresql://...` URL to use Postgres instead — no code changes.
+   response_time_ms, timestamp, model_used, tool_call_valid`, in the same
+   Postgres database as `slide_chunks`.
 
 ## Setup
 
 This machine's default Python is 3.14, which is too new for some of the ML
-dependencies (torch, chromadb, onnxruntime) to have compatible wheels yet.
-The project was set up with a Python 3.12 virtual environment via `uv`:
+dependencies (torch, onnxruntime) to have compatible wheels yet. The project
+was set up with a Python 3.12 virtual environment via `uv`:
 
 ```bash
 uv python install 3.12
@@ -56,6 +59,17 @@ Activate the environment for interactive use:
 ```bash
 source .venv/bin/activate
 ```
+
+### Database
+
+`DATABASE_URL` must point at a Postgres instance with the `pgvector`
+extension available (a `.env` file at the project root, gitignored, is
+where this is expected — [`config.py`](study_buddy/config.py) loads it
+automatically). This project was verified against a
+[Neon](https://neon.tech) instance; Neon has pgvector pre-installed, and
+`init_db()` runs `CREATE EXTENSION IF NOT EXISTS vector` plus
+`CREATE TABLE IF NOT EXISTS` for both tables on first use, so no manual
+migration step is needed beyond having `DATABASE_URL` set.
 
 ## CLI usage
 
@@ -87,13 +101,23 @@ study-buddy log-interaction \
 ```
 
 Tests generate small real PDFs on the fly with PyMuPDF (no checked-in binary
-fixtures) and verify:
-- chunks split on heading/page boundaries and preserve metadata
-  ([`tests/test_chunking.py`](tests/test_chunking.py)),
-- ingested chunks are retrievable from ChromaDB by semantic query, and
-  re-ingestion doesn't duplicate them ([`tests/test_ingest_pipeline.py`](tests/test_ingest_pipeline.py)),
-- quiz interactions persist correctly to the database across sessions
-  ([`tests/test_db.py`](tests/test_db.py)).
+fixtures). [`tests/test_chunking.py`](tests/test_chunking.py) (chunk boundaries/metadata) needs no
+database at all and always runs.
 
-Each test uses an isolated `Settings` (temp ChromaDB dir + temp SQLite file)
-so runs never interfere with each other or with `./data`.
+[`tests/test_db.py`](tests/test_db.py) and [`tests/test_ingest_pipeline.py`](tests/test_ingest_pipeline.py) exercise `slide_chunks`
+(pgvector) and `question_interactions`, so they need a real Postgres
+connection — SQLite can't run either the `vector` extension or a pgvector
+column. Set `TEST_DATABASE_URL` in `.env` to a **dedicated Neon branch**
+(Neon → your project → Branches → Create branch), separate from the
+`DATABASE_URL` branch that holds real study material:
+
+```
+TEST_DATABASE_URL="postgresql://...-test-branch.../neondb?sslmode=require"
+```
+
+The [`db_settings`](tests/conftest.py) fixture truncates `slide_chunks` and
+`question_interactions` on that branch before every test that uses it, so
+it's safe for tests to write and wipe data there — just never point
+`TEST_DATABASE_URL` at the same branch as `DATABASE_URL`. If
+`TEST_DATABASE_URL` isn't set, those tests are skipped (not failed) with a
+message saying so; chunking tests still run either way.

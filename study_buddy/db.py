@@ -1,24 +1,45 @@
-"""Step 6: relational schema for quiz interactions, via SQLAlchemy.
+"""Step 6: relational schema for slide chunks and quiz interactions, via SQLAlchemy.
 
-This is deliberately separate from the ChromaDB vector store: ChromaDB
-holds study material for retrieval, this database holds the record of a
-learner (or an AI tutor) answering a question about that material. The
-same models and engine work against SQLite (the default, zero-setup) or
-Postgres — only `settings.database_url` changes.
+Both tables live in the same Postgres database (see config.Settings.database_url,
+sourced from DATABASE_URL): slide_chunks holds embedded study material for
+pgvector similarity search, question_interactions holds the record of a
+learner (or an AI tutor) answering a question about that material.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text, create_engine
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Boolean, Integer, String, Text
+from sqlalchemy import DateTime
+from sqlalchemy import text as sql_text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from study_buddy.config import DEFAULT_SETTINGS, Settings
 
+# sentence-transformers/all-MiniLM-L6-v2's output size (see embeddings.py) —
+# the slide_chunks.embedding column must match this exactly.
+EMBEDDING_DIMENSIONS = 384
+
 
 class Base(DeclarativeBase):
     pass
+
+
+class SlideChunk(Base):
+    """One embedded chunk of study material, ready for pgvector similarity search."""
+
+    __tablename__ = "slide_chunks"
+
+    chunk_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    topic: Mapped[str] = mapped_column(String(255), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    extraction_method: Mapped[str] = mapped_column(String(32), nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIMENSIONS), nullable=False)
 
 
 class QuestionInteraction(Base):
@@ -40,18 +61,25 @@ class QuestionInteraction(Base):
 
 
 def get_engine(settings: Settings = DEFAULT_SETTINGS):
-    """Create the SQLAlchemy engine, ensuring a local sqlite file's dir exists."""
-    if settings.database_url.startswith("sqlite:///./"):
-        from pathlib import Path
+    """Create the SQLAlchemy engine for the configured Postgres database.
 
-        db_path = Path(settings.database_url.removeprefix("sqlite:///"))
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-    return create_engine(settings.database_url)
+    Neon (and most providers) hand out plain `postgresql://` URLs, which
+    SQLAlchemy defaults to the psycopg2 driver. This project installs
+    psycopg (v3) instead, so a bare `postgresql://` scheme is upgraded to
+    `postgresql+psycopg://` here rather than requiring DATABASE_URL itself
+    to know which driver the app happens to use.
+    """
+    url = settings.database_url
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return create_engine(url)
 
 
 def init_db(settings: Settings = DEFAULT_SETTINGS):
-    """Create all tables if they don't already exist. Returns the engine."""
+    """Enable pgvector and create all tables if they don't already exist."""
     engine = get_engine(settings)
+    with engine.begin() as conn:
+        conn.execute(sql_text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.create_all(engine)
     return engine
 

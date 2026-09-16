@@ -8,8 +8,8 @@ from study_buddy.config import Settings
 from study_buddy.db import QuestionInteraction, get_session_factory
 
 
-def test_interaction_persists_all_fields(isolated_settings: Settings):
-    session_factory = get_session_factory(isolated_settings)
+def test_interaction_persists_all_fields(db_settings: Settings):
+    session_factory = get_session_factory(db_settings)
     question_id = str(uuid.uuid4())
 
     with session_factory() as session:
@@ -41,8 +41,8 @@ def test_interaction_persists_all_fields(isolated_settings: Settings):
         assert row.timestamp is not None
 
 
-def test_multiple_interactions_are_independently_queryable(isolated_settings: Settings):
-    session_factory = get_session_factory(isolated_settings)
+def test_multiple_interactions_are_independently_queryable(db_settings: Settings):
+    session_factory = get_session_factory(db_settings)
 
     with session_factory() as session:
         session.add(
