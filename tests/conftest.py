@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import delete
 
 from study_buddy.config import Settings
-from study_buddy.db import QuestionInteraction, SlideChunk, init_db
+from study_buddy.db import QuestionInteraction, SlideChunk, ToolCallLog, init_db
 
 
 @pytest.fixture
@@ -81,4 +81,22 @@ def db_settings() -> Settings:
     with engine.begin() as conn:
         conn.execute(delete(SlideChunk))
         conn.execute(delete(QuestionInteraction))
+        conn.execute(delete(ToolCallLog))
     return settings
+
+
+@pytest.fixture
+def groq_settings(db_settings: Settings) -> Settings:
+    """db_settings plus a real GROQ_API_KEY, for the one live smoke test.
+
+    Skipped (not failed) when GROQ_API_KEY is unset — same convention as
+    db_settings skipping on a missing TEST_DATABASE_URL. Built on top of
+    db_settings so the live test also gets an isolated, truncated test
+    database rather than ever touching the application's real DATABASE_URL.
+    """
+    if not db_settings.groq_api_key:
+        pytest.skip(
+            "GROQ_API_KEY is not set — set it to run the one live smoke "
+            "test against the real Groq API."
+        )
+    return db_settings

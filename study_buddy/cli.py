@@ -16,6 +16,7 @@ import click
 from study_buddy.config import DEFAULT_SETTINGS
 from study_buddy.db import QuestionInteraction, get_session_factory
 from study_buddy.ingest import ingest_folder, ingest_pdf
+from study_buddy.tutor import run_tutor_session
 from study_buddy.vectorstore import query_chunks
 
 
@@ -100,6 +101,20 @@ def log_interaction(
         session.add(interaction)
         session.commit()
         click.echo(f"Logged interaction {interaction.question_id}")
+
+
+@main.command()
+@click.argument("topic")
+@click.option(
+    "--max-turns",
+    default=20,
+    show_default=True,
+    help="Safety cap on total model turns before the session force-ends.",
+)
+def tutor(topic: str, max_turns: int):
+    """Start an interactive AI tutoring session on TOPIC."""
+    summary = run_tutor_session(topic, settings=DEFAULT_SETTINGS, max_turns=max_turns)
+    click.echo(f"\nSession summary: {summary}")
 
 
 if __name__ == "__main__":

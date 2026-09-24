@@ -39,6 +39,15 @@ class Settings:
     # interactions. Sourced from the DATABASE_URL environment variable.
     database_url: str = field(default_factory=_database_url_from_env)
 
+    # Optional, unlike database_url: this must NOT raise when missing.
+    # DEFAULT_SETTINGS = Settings() below runs at import time, and config.py
+    # is imported by every module including cli.py — an eager raise here
+    # would break ingest/query/log-interaction for anyone who hasn't set up
+    # Groq yet. The "key is missing" error is deferred to
+    # groq_client.get_client(), raised only when a Groq call is attempted.
+    groq_api_key: str | None = field(default_factory=lambda: os.environ.get("GROQ_API_KEY"))
+    groq_model: str = "openai/gpt-oss-20b"
+
     # A page is routed to the marker-pdf fallback when pymupdf's extracted
     # text looks too sparse/garbled relative to how much content the page
     # visually holds (see extraction.is_math_heavy_or_low_quality).

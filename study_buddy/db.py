@@ -42,6 +42,28 @@ class SlideChunk(Base):
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIMENSIONS), nullable=False)
 
 
+class ToolCallLog(Base):
+    """One individual tool invocation during a `study-buddy tutor` session,
+    logged for later hand-evaluation of the model's tool-selection accuracy.
+
+    Distinct from QuestionInteraction.tool_call_valid (a simple per-question
+    flag on the answer-recording row) — this is a full audit trail of every
+    tool call the model made, including calls like retrieve_context and
+    get_weakest_topic that never touch question_interactions at all.
+    """
+
+    __tablename__ = "tool_call_logs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    arguments: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_response: Mapped[str] = mapped_column(Text, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
 class QuestionInteraction(Base):
     """One recorded attempt at answering a question about ingested material."""
 
